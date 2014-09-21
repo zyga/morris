@@ -1,0 +1,6 @@
+=====
+Usage
+=====
+
+.. automodule:: morris
+    :members:
