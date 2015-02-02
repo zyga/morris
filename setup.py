@@ -29,7 +29,7 @@ history = open('HISTORY.rst').read().replace('.. :changelog:', '')
 
 setup(
     name='morris',
-    version='1.0',
+    version='1.1',
     description='Morris is an announcement (signal/event) system for Python',
     long_description=readme + '\n\n' + history,
     author='Zygmunt Krynicki',
