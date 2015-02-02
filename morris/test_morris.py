@@ -24,12 +24,20 @@ Test definitions for Morris
 from __future__ import print_function, absolute_import, unicode_literals
 
 from unittest import TestCase
+from doctest import DocTestSuite
 
+from morris import Signal
+from morris import SignalTestCase
 from morris import boundmethod
 from morris import remove_signals_listeners
-from morris import Signal
 from morris import signal
-from morris import SignalTestCase
+from morris import signaldescriptor
+
+
+def load_tests(loader, tests, ignore):
+    import morris
+    tests.addTests(DocTestSuite(morris))
+    return tests
 
 
 class FakeSignalTestCase(SignalTestCase):
@@ -130,6 +138,54 @@ class C2(object):
         """
 
 
+class NS(object):
+    """
+    Helper namespace-like class
+    """
+
+
+def get_foo_bar():
+    """
+    Helper function that returns two functions, on_foo() and on_bar(), similar
+    to what :class:`C1` and :class:`C2` define internally.
+    """
+    def on_foo(*args, **kwargs):
+        """
+        A signal accepting (ignoring) arbitrary arguments
+        """
+    def on_bar():
+        """
+        A signal accepting no arguments
+        """
+    return on_foo, on_bar
+
+
+def M1():
+    """
+    Helper function that returns a module-like thing with two signals defined
+    using :meth:`Signal.define`
+    """
+    on_foo, on_bar = get_foo_bar()
+    ns = NS()
+    ns.on_foo_func = on_foo
+    ns.on_foo = Signal.define(on_foo)
+    ns.on_bar = Signal.define(on_bar)
+    return ns
+
+
+def M2():
+    """
+    Helper function that returns a module-like thing with two signals defined
+    using :class:`signal`
+    """
+    on_foo, on_bar = get_foo_bar()
+    ns = NS()
+    ns.on_foo_func = on_foo
+    ns.on_foo = signal(on_foo)
+    ns.on_bar = signal(on_bar)
+    return ns
+
+
 class R(object):
     """
     Helper class that collaborates with either :class:`C1` or :class:`C2`
@@ -158,33 +214,19 @@ class SignalTestsBase(object):
     def setUp(self):
         self.c = self.get_c()
 
+    def test_sanity(self):
+        """
+        Ensure that :meth:`get_c()` is not faulty
+        """
+        self.assertIsInstance(self.c.on_foo, Signal)
+        self.assertNotIsInstance(self.c.on_foo_func, Signal)
+        self.assertNotIsInstance(self.c.on_foo_func, signaldescriptor)
+        self.assertEqual(len(self.c.on_foo.listeners), 1)
+        self.assertIsInstance(self.c.on_bar, Signal)
+        self.assertEqual(len(self.c.on_bar.listeners), 1)
+
     def get_c(self):
         raise NotImplementedError
-
-    def test_first_responder(self):
-        """
-        Ensure that using the decorator syntax connects the decorated object
-        as the first responder
-        """
-        self.assertEqual(len(self.c.on_foo.listeners), 1)
-        # NOTE: this is a bit hairy. The ``signal`` decorator is always called
-        # on the bare function object (so on the ``on_foo`` function, before
-        # it becomes a method.
-        #
-        # To test that we need to extract the bare function (using the __func__
-        # property) from the (real) boundmethod that we see as
-        # self.c.on_foo_func.
-        #
-        # Then on top of that, the first responder is treated specially
-        # by ``signal.__get__()`` so that it creates a fake boundmethod
-        # (implemented in morris, not by python built-in) that stores the
-        # signal and the instance manually.
-        first_info = self.c.on_foo.listeners[0]
-        first_listener = first_info.listener
-        self.assertIsInstance(first_listener, boundmethod)
-        self.assertEqual(first_listener.instance, self.c)
-        self.assertEqual(first_listener.func, self.c.on_foo_func.__func__)
-        self.assertEqual(first_info.pass_signal, False)
 
     def test_connect(self):
         """
@@ -244,7 +286,55 @@ class SignalTestsBase(object):
         self.assertEqual(len(b.__listeners__), 3)
 
 
-class SignalTestsC1(SignalTestsBase, SignalTestCase):
+class SignalsOnMethods(object):
+    """
+    Mix-in for C1 and C2-based tests
+    """
+
+    def test_first_responder(self):
+        """
+        Ensure that using the decorator syntax connects the decorated object
+        as the first responder
+        """
+        self.assertEqual(len(self.c.on_foo.listeners), 1)
+        # NOTE: this is a bit hairy. The ``signal`` decorator is always called
+        # on the bare function object (so on the ``on_foo`` function, before
+        # it becomes a method.
+        #
+        # To test that we need to extract the bare function (using the __func__
+        # property) from the (real) boundmethod that we see as
+        # self.c.on_foo_func.
+        #
+        # Then on top of that, the first responder is treated specially
+        # by ``signal.__get__()`` so that it creates a fake boundmethod
+        # (implemented in morris, not by python built-in) that stores the
+        # signal and the instance manually.
+        first_info = self.c.on_foo.listeners[0]
+        first_listener = first_info.listener
+        self.assertIsInstance(first_listener, boundmethod)
+        self.assertEqual(first_listener.instance, self.c)
+        self.assertEqual(first_listener.func, self.c.on_foo_func.__func__)
+        self.assertEqual(first_info.pass_signal, False)
+
+
+class SignalsOnFunctions(object):
+    """
+    Mix-in for M1 and M2-based tests
+    """
+
+    def test_first_responder(self):
+        """
+        Ensure that using the decorator syntax connects the decorated object as
+        the first responder
+        """
+        self.assertEqual(len(self.c.on_foo.listeners), 1)
+        first_info = self.c.on_foo.listeners[0]
+        first_listener = first_info.listener
+        self.assertEqual(first_listener, self.c.on_foo_func)
+        self.assertEqual(first_info.pass_signal, False)
+
+
+class SignalTestsC1(SignalTestsBase, SignalsOnMethods, SignalTestCase):
     """
     Test definitions for :class:`morris.Signal` class that use :class:`C1`
     """
@@ -253,10 +343,28 @@ class SignalTestsC1(SignalTestsBase, SignalTestCase):
         return C1()
 
 
-class SignalTestsC2(SignalTestsBase, SignalTestCase):
+class SignalTestsC2(SignalTestsBase, SignalsOnMethods, SignalTestCase):
     """
     Test definitions for :class:`morris.Signal` class that use :class:`C2`
     """
 
     def get_c(self):
         return C2()
+
+
+class SignalTestsM1(SignalTestsBase, SignalsOnFunctions, SignalTestCase):
+    """
+    Test definitions for :class:`morris.Signal` class that use :func:`M1`
+    """
+
+    def get_c(self):
+        return M1()
+
+
+class SignalTestsM2(SignalTestsBase, SignalsOnFunctions, SignalTestCase):
+    """
+    Test definitions for :class:`morris.Signal` class that use :func:`M2`
+    """
+
+    def get_c(self):
+        return M2()

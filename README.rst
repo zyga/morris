@@ -16,11 +16,10 @@ Features
 
 * Free software: LGPLv3 license
 * Documentation: https://morris.readthedocs.org.
-* Create signals with a simple decorator :meth:`morris.Signal.define()` or just
-  :class:`morris.signal`
-* Send signals by calling the decorated method
-* Connect to and disconnect from signals with :meth:`morris.Signal.connect()`
-  and :meth:`morris.Signal.disconnect()`.
+* Create signals with a simple decorator :class:`morris.signal`
+* Send signals by calling the decorated method or function
+* Connect to and disconnect from signals with :meth:`morris.signal.connect()`
+  and :meth:`morris.signal.disconnect()`.
 * Test your code with :meth:`morris.SignalTestCase.watchSignal()`,
   :meth:`morris.SignalTestCase.assertSignalFired()`,
   :meth:`morris.SignalTestCase.assertSignalNotFired()`
