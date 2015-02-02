@@ -1,4 +1,4 @@
-# Copyright 2012-2014 Canonical Ltd.
+# Copyright 2012-2015 Canonical Ltd.
 # Written by:
 #   Zygmunt Krynicki <zygmunt.krynicki@canonical.com>
 #
@@ -15,106 +15,139 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Morris.  If not, see <http://www.gnu.org/licenses/>.
-
 """
 :mod:`morris` --  announcement (signal/event) system for Python
 ===============================================================
 
-This module defines three objects:
-
-    The :class:`Signal` class:
-        This class is contains APIs for interacting with existing signals.
-
-    The :class:`signal` function / method decorator descriptor class:
-        This class can be used as a function or method decorator to define
-        as signal with the same name and a first responder.
-
-    The :class:`SignalTestCase` base class for unit tests that simplify working
-    with signals and signal events (firing signals)
+The morris module defines two main classes :class:`signal` and
+:class:`SignalTestCase`.
 
 Defining Signals
 ----------------
 
-You can import the ``Signal`` class and use idiomatic code like::
+.. note::
+    Since version 1.1 ``Signal.define`` and ``signal`` are identical
 
-    from morris import Signal
+You can import the ``signal`` class and use idiomatic code like::
 
-    class Foo(object):  # NOTE: classic python 2.x classes are not supported
+    >>> from morris import signal
 
-        @Signal.define
-        def on_foo(self):
-            pass
+    >>> # NOTE: classic python 2.x classes are not supported
+    >>> class Klass(object):
+    ...     @signal
+    ...     def on_foo(self):
+    ...         pass
 
-    @Signal.define
-    on_bar():
-        pass
-
-Or use the ``signal`` decorator directly::
-
-    from morris import signal
-
-    class Foo(object):  # NOTE: classic python 2.x classes are not supported
-
-        @signal
-        def on_foo(self):
-            pass
-
-    @signal
-    on_bar():
-        pass
-
-
-Both declarations are identical and result in identical runtime behavior.
-``Signal`` is less likely to clash with a function or module from the standard
-library but ``signal`` is shorter. Use whichever you prefer.
-
+    >>> @signal
+    ... def on_bar():
+    ...     pass
 
 Connecting signal listeners
 ---------------------------
 
-Connecting signals is equally easy. Just use the :meth:`Signal.connect()` and
-:meth:`Signal.disconnect` with a listener object::
+Connecting signals is equally easy, just call :meth:`signal.connect()`
 
-    @signal
-    def on_bar():
-        pass
+    >>> def handler():
+    ...     print("handling signal")
 
-
-    def bar_handler():
-        pass
-
-    on_bar.connect(bar_handler)
-    on_bar.disconnect(bar_handler)
-
+    >>> obj = Klass()
+    >>> obj.on_foo.connect(handler)
+    >>> on_bar.connect(handler)
 
 Firing signals
 --------------
 
 To fire a signal simply *call* the signal object::
 
-    @signal
-    def on_bar():
-        pass
-
-    on_bar()  # fired!
+    >>> obj.on_foo()
+    handling signal
+    >>> on_bar()
+    handling signal
 
 Typically you will want to pass some additional arguments. Both positional
 and keyword arguments are supported::
 
-    @signal
-    def on_bar_with_args(arg1, arg2):
-        pass
+    >>> @signal
+    ... def on_bar_with_args(arg1, arg2):
+    ...     print("fired!")
 
-    on_bar_with_args('foo', arg2='bar')  # fired!
+    >>> on_bar_with_args('foo', arg2='bar')
+    fired!
 
 If you are working in a tight loop it is slightly faster to construct the list
 of positional arguments and the dictionary of keyword arguments and call the
 :meth:`Signal.fire()` method directly::
 
-    args = ('foo')
-    kwargs = {'arg2': 'bar'}
-    for i in range(10000):
-        on_bar_with_args.fire(args, kwargs)  # fired!
+    >>> args = ('foo',)
+    >>> kwargs = {'arg2': 'bar'}
+    >>> for i in range(3):
+    ...     on_bar_with_args.fire(args, kwargs)
+    fired!
+    fired!
+    fired!
+
+Passing additional meta-data to the signal listener
+---------------------------------------------------
+
+In some cases you may wish to use a generic signal handler that would benefit
+from knowing which signal has triggered it. To do that first make sure that
+your handler has a ``signal`` argument and then call ``sig.connect(handler,
+pass_signal=True)``:
+
+    >>> def generic_handler(*args, **kwargs):
+    ...     signal = kwargs.pop('signal')
+    ...     print("Handling signal {}: {} {}".format(signal, args, kwargs))
+
+    >>> @signal
+    ... def login(user, password):
+    ...     pass
+
+    >>> @signal
+    ... def logout(user):
+    ...     pass
+
+    >>> login.connect(generic_handler, pass_signal=True)
+    >>> logout.connect(generic_handler, pass_signal=True)
+
+NOTE: the example below uses str(...) to have identical output on Python
+2.7 and 3.x but it is otherwise useless.
+
+    >>> login(str('user'), password=str('pass'))
+    Handling signal <signal name:'login'>: ('user',) {'password': 'pass'}
+    >>> logout(str('user'))
+    Handling signal <signal name:'logout'>: ('user',) {}
+
+This also works with classes:
+
+    >>> class App(object):
+    ...     def __repr__(self):
+    ...         return "app"
+    ...     @signal
+    ...     def login(self, user, password):
+    ...         pass
+    ...     @signal
+    ...     def logout(self, user):
+    ...         pass
+    >>> app = App()
+    >>> app.login.connect(generic_handler, pass_signal=True)
+    >>> app.logout.connect(generic_handler, pass_signal=True)
+
+    >>> app.login(str('user'), password=str('pass'))
+    ... # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+    Handling signal <signal name:'...login' (specific to app)>:
+        ('user',) {'password': 'pass'}
+    >>> app.logout(str('user'))  # doctest: +ELLIPSIS
+    Handling signal <signal name:'...logout' (specific to app)>: ('user',) {}
+
+Disconnecting signals
+---------------------
+
+To disconnect a signal handler call :meth:`signal.disconnect()` with the same
+listener object that was used in ``connect()``:
+
+    >>> obj.on_foo.disconnect(handler)
+    >>> on_bar.disconnect(handler)
+
 
 Threading considerations
 ------------------------
@@ -123,17 +156,68 @@ Morris doesn't do anything related to threads. Threading is diverse enough that
 for now it was better to just let uses handle it. There are two things that
 are worth mentioning though:
 
-1) :meth:`Signal.connect()` and :meth:`Signal.disconnect()` should be safe to
-   call concurrently with :meth:`Signal.fire()` since fire() operates on
+1) :meth:`signal.connect()` and :meth:`signal.disconnect()` should be safe to
+   call concurrently with :meth:`signal.fire()` since fire() operates on
    a *copy* of the list of listeners
 
-2) Event handlers are called from the thread calling :meth:`Signal.fire()`,
+2) Event handlers are called from the thread calling :meth:`signal.fire()`,
    not from the thread that was used to connect to the signal handler. If you
    need special provisions for working with signals in a specific thread
    consider calling a thread-library-specific function that calls a callable
    in a specific thread context.
-"""
 
+
+Support for writing unit tests
+------------------------------
+
+Morris ships with support for writing tests for signals. You can use
+:class:`SignalTestCase`'s support methods such as
+:meth:`~signalTestCase.watchSignal()`,
+:meth:`~SignalTestCase.assertSignalFired()`,
+:meth:`~SignalTestCase.assertSignalNotFired()` and
+:meth:`~SignalTestCase.assertSignalOrdering()` to simplify your tests.
+
+Here's a simple example using all of the above:
+
+    >>> class App(object):
+    ...     @signal
+    ...     def on_login(self, user):
+    ...         pass
+    ...     @signal
+    ...     def on_logout(self, user):
+    ...         pass
+    ...     def login(self, user):
+    ...         self.on_login(user)
+    ...     def logout(self, user):
+    ...         self.on_logout(user)
+
+    >>> class AppTests(SignalTestCase):
+    ...     def setUp(self):
+    ...         self.app = App()
+    ...         self.watchSignal(self.app.on_login)
+    ...         self.watchSignal(self.app.on_logout)
+    ...     def test_login(self):
+    ...         self.app.login("user")
+    ...         self.app.logout("user")
+    ...         self.assertSignalFired(self.app.on_login, 'user')
+    ...         self.assertSignalFired(self.app.on_logout, 'user')
+    ...         self.assertSignalOrdering(
+    ...             (self.app.on_login, ('user',), {}),
+    ...             (self.app.on_logout, ('user',), {}))
+    ...         self.assertSignalNotFired(self.app.on_login, 'admin')
+
+    >>> import sys
+    >>> suite = unittest.TestLoader().loadTestsFromTestCase(AppTests)
+    >>> runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
+    >>> runner.run(suite)  # doctest: +ELLIPSIS
+    test_login (morris.AppTests) ... ok
+    <BLANKLINE>
+    ----------------------------------------------------------------------
+    Ran 1 test in ...s
+    <BLANKLINE>
+    OK
+    <unittest.runner.TextTestResult run=1 errors=0 failures=0>
+"""
 from __future__ import print_function, absolute_import, unicode_literals
 
 import collections
@@ -143,8 +227,8 @@ import unittest
 
 __author__ = 'Zygmunt Krynicki'
 __email__ = 'zygmunt.krynicki@canonical.com'
-__version__ = '1.0'
-__all__ = ['Signal', 'signal', 'SignalTestCase']
+__version__ = '1.1'
+__all__ = ['signal', 'SignalTestCase']
 
 _logger = logging.getLogger("morris")
 
@@ -152,24 +236,106 @@ _logger = logging.getLogger("morris")
 listenerinfo = collections.namedtuple('listenerinfo', 'listener pass_signal')
 
 
-class Signal(object):
+class signal(object):
     """
     Basic signal that supports arbitrary listeners.
 
     While this class can be used directly it is best used with the helper
     decorator Signal.define on a function or method. See the documentation
     for the :mod:`morris` module for details.
-    """
 
-    def __init__(self, name):
+    :attr _name:
+        Name of the signal, typically accessed via :meth:`name`.
+    :attr _listeners:
+        List of signal listeners. Each item is a tuple ``(listener,
+        pass_signal)`` that encodes how to call the listener.
+    """
+    try:
+        _str_bases = (str, unicode)
+    except NameError:
+        _str_bases = (str,)
+
+    def __init__(self, name_or_first_responder, pass_signal=False):
         """
         Construct a signal with the given name
+
+        :param name_or_first_responder:
+            Either the name of the signal to construct or a callable which
+            will be the first responder. In the latter case the callable is
+            used to obtain the name of the signal.
+        :param pass_signal:
+            An optional flag that instructs morris to pass the signal object
+            itself to the first responder (as the ``signal`` argument). This is
+            only used in the case where ``name_or_first_responder`` is a
+            callable.
         """
+        if isinstance(name_or_first_responder, self._str_bases):
+            first_responder = None
+            name = name_or_first_responder
+        else:
+            first_responder = name_or_first_responder
+            name = _get_fn_name(first_responder)
         self._name = name
+        self._first_responder = first_responder
         self._listeners = []
+        if first_responder is not None:
+            self._listeners.append(listenerinfo(first_responder, pass_signal))
 
     def __repr__(self):
-        return "<Signal name:{!r}>".format(self._name)
+        """
+        A representation of the signal.
+
+        There are two possible representations:
+            - a signal object created via a signal descriptor on an object
+            - a signal object acting as a descriptor or function decorator
+        """
+        if (len(self._listeners[0]) > 0
+                and isinstance(self.listeners[0].listener, boundmethod)):
+            return "<signal name:{!r} (specific to {!r})>".format(
+                self._name, self._listeners[0].listener.instance)
+        else:
+            return "<signal name:{!r}>".format(self._name)
+
+    def __get__(self, instance, owner):
+        """
+        Descriptor __get__ method
+
+        This method is called when a signal-decorated method is being accessed
+        via an object or a class. It is never called for decorated functions.
+
+        :param instance:
+            Instance of the object the descriptor is being used on.
+            This is None when the descriptor is accessed on a class.
+        :param owner:
+            The class that the descriptor is defined on.
+        :returns:
+            If ``instance`` is None we return ourselves, this is what
+            descriptors typically do. If ``instance`` is not None we return a
+            unique :class:`Signal` instance that is specific to that object and
+            signal. This is implemented by storing the signal inside the
+            object's __signals__ attribute.
+        """
+        if instance is None:
+            return self
+        # Ensure that the instance has __signals__ property
+        if not hasattr(instance, "__signals__"):
+            instance.__signals__ = {}
+        # Ensure that the instance signal is defined
+        if self._name not in instance.__signals__:
+            # Or create it if needed
+            signal = Signal(self._name)
+            # Connect the first responder function via the trampoline so that
+            # the instance's self object is also passed explicitly
+            signal.connect(boundmethod(instance, self._first_responder))
+            # Ensure we don't recreate signals
+            instance.__signals__[self._name] = signal
+        return instance.__signals__[self._name]
+
+    def __set__(self, instance, value):
+        raise AttributeError("You cannot overwrite signals")
+
+    def __delete__(self, instance):
+        raise AttributeError("You cannot delete signals")
 
     @property
     def name(self):
@@ -182,7 +348,31 @@ class Signal(object):
         from the decorated function.
 
         On python 3.3+ the qualified name is used (see :pep:`3155`), on earlier
-        versions the plain name is used (without the class name)
+        versions the plain name is used (without the class name). The name is
+        identical regardless of how the signal is being accessed:
+
+            >>> class C(object):
+            ...     @signal
+            ...     def on_meth(self):
+            ...         pass
+
+        As a descriptor on a class:
+
+            >>> C.on_meth.name  # doctest: +ELLIPSIS
+            '...on_meth'
+
+        As a descriptor on an object:
+
+            >>> C().on_meth.name  # doctest: +ELLIPSIS
+            '...on_meth'
+
+        As a decorated function:
+
+            >>> @signal
+            ... def on_func():
+            ...     pass
+            >>> on_func.name
+            'on_func'
         """
         return self._name
 
@@ -199,6 +389,48 @@ class Signal(object):
         """
         return self._listeners
 
+    @property
+    def first_responder(self):
+        """
+        The first responder function.
+
+        This is the function that the ``signal`` may have been instantiated
+        with. It is only relevant if the signal itself is used as a
+        *descriptor* in a class (where it decorates a method).
+
+        For example, contrast the access of the signal on the class and on a
+        class instance:
+
+            >>> class C(object):
+            ...     @signal
+            ...     def on_foo(self):
+            ...         pass
+
+        Class access gives uses the descriptor protocol to expose the
+        actual signal object.
+
+            >>> C.on_foo  # doctest: +ELLIPSIS
+            <signal name:'...on_foo'>
+
+        Here we can use the ``first_responder`` property to see the actual
+        function.
+
+            >>> C.on_foo.first_responder  # doctest: +ELLIPSIS
+            <function ...on_foo at ...>
+
+        Object access is different as now the signal instance is specific to
+        the object:
+
+            >>> C().on_foo  # doctest: +ELLIPSIS
+            <signal name:'...on_foo' (specific to <morris.C object at ...)>
+
+        And now the first responder is gone (it is now buried inside the
+        :meth:`listeners` list):
+
+            >>> C().on_foo.first_responder
+        """
+        return self._first_responder
+
     def connect(self, listener, pass_signal=False):
         """
         Connect a new listener to this signal
@@ -213,9 +445,10 @@ class Signal(object):
         :returns:
             None
 
-        The listener will be called whenever fire() is invoked on the signal.
-        The listener is appended to the list of listeners. Duplicates are not
-        checked and if a listener is added twice it gets called twice.
+        The listener will be called whenever :meth:`fire()` or
+        :meth:`__call__()` are called.  The listener is appended to the list of
+        listeners. Duplicates are not checked and if a listener is added twice
+        it gets called twice.
         """
         info = listenerinfo(listener, pass_signal)
         self._listeners.append(info)
@@ -285,16 +518,27 @@ class Signal(object):
         """
         self.fire(args, kwargs)
 
-    @classmethod
-    def define(cls, first_responder):
-        """
-        Helper decorator to define a signal descriptor in a class
+# In the past this used to be a helper method for defining signals.
+# Now the same functionality is available through the signal class.
+signal.define = signal
 
-        The decorated function is used as the first responder of the newly
-        defined signal. The signal also inherits the docstring from
-        decorated the function.
-        """
-        return signal(first_responder)
+
+# In the past this used to be the actual signal class that knows about
+# listeners. Now that is all merged into the one ``signal`` class.
+Signal = signal
+
+
+# In the past this used to be the signal descriptor class that knows about
+# the first responder and knows how to create :class:`Signal` objects. Now
+# that is all merged into the one ``signal`` class.
+signaldescriptor = signal
+
+
+def _get_fn_name(fn):
+    if hasattr(fn, '__qualname__'):
+        return fn.__qualname__
+    else:
+        return fn.__name__
 
 
 class boundmethod(object):
@@ -312,50 +556,6 @@ class boundmethod(object):
 
     def __call__(self, *args, **kwargs):
         return self.func(self.instance, *args, **kwargs)
-
-
-class signal(object):
-    """
-    Descriptor for convenient signal access.
-
-    Typically this class is used indirectly, when accessed from Signal.define
-    method decorator. It is used to do all the magic required when accessing
-    signal name on a class or instance.
-    """
-
-    def __init__(self, first_responder):
-        if hasattr(first_responder, '__qualname__'):
-            self._name = first_responder.__qualname__
-        else:
-            self._name = first_responder.__name__
-        self.first_responder = first_responder
-        self.__doc__ = first_responder.__doc__
-
-    def __repr__(self):
-        return "<signal for Signal:{!r}>".format(self._name)
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        # Ensure that the instance has __signals__ property
-        if not hasattr(instance, "__signals__"):
-            instance.__signals__ = {}
-        # Ensure that the instance signal is defined
-        if self._name not in instance.__signals__:
-            # Or create it if needed
-            signal = Signal(self._name)
-            # Connect the first responder function via the trampoline so that
-            # the instance's self object is also passed explicitly
-            signal.connect(boundmethod(instance, self.first_responder))
-            # Ensure we don't recreate signals
-            instance.__signals__[self._name] = signal
-        return instance.__signals__[self._name]
-
-    def __set__(self, instance, value):
-        raise AttributeError("You cannot overwrite signals")
-
-    def __delete__(self, instance):
-        raise AttributeError("You cannot delete signals")
 
 
 class SignalTestCase(unittest.TestCase):
