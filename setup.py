@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2012-2014 Canonical Ltd.
+# Copyright 2012-2015 Canonical Ltd.
 # Written by:
 #   Zygmunt Krynicki <zygmunt.krynicki@canonical.com>
 #
@@ -29,7 +29,7 @@ history = open('HISTORY.rst').read().replace('.. :changelog:', '')
 
 setup(
     name='morris',
-    version='1.1',
+    version='1.2',
     description='Morris is an announcement (signal/event) system for Python',
     long_description=readme + '\n\n' + history,
     author='Zygmunt Krynicki',

@@ -98,24 +98,30 @@ pass_signal=True)``:
     ...     signal = kwargs.pop('signal')
     ...     print("Handling signal {}: {} {}".format(signal, args, kwargs))
 
+Let's define two signals now:
+
     >>> @signal
     ... def login(user, password):
     ...     pass
-
     >>> @signal
     ... def logout(user):
     ...     pass
 
+And connect both to the same handler:
+
     >>> login.connect(generic_handler, pass_signal=True)
     >>> logout.connect(generic_handler, pass_signal=True)
 
-NOTE: the example below uses str(...) to have identical output on Python
-2.7 and 3.x but it is otherwise useless.
+Now we can fire either one and see our handler work:
 
     >>> login(str('user'), password=str('pass'))
     Handling signal <signal name:'login'>: ('user',) {'password': 'pass'}
     >>> logout(str('user'))
     Handling signal <signal name:'logout'>: ('user',) {}
+
+.. note::
+    The example uses ``str(...)`` to have identical output on Python
+    2.7 and 3.x but ``str()`` it is otherwise useless.
 
 This also works with classes:
 
@@ -131,6 +137,8 @@ This also works with classes:
     >>> app = App()
     >>> app.login.connect(generic_handler, pass_signal=True)
     >>> app.logout.connect(generic_handler, pass_signal=True)
+
+We can now fire the signals, just as before:
 
     >>> app.login(str('user'), password=str('pass'))
     ... # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
@@ -148,7 +156,6 @@ listener object that was used in ``connect()``:
     >>> obj.on_foo.disconnect(handler)
     >>> on_bar.disconnect(handler)
 
-
 Threading considerations
 ------------------------
 
@@ -165,7 +172,6 @@ are worth mentioning though:
    need special provisions for working with signals in a specific thread
    consider calling a thread-library-specific function that calls a callable
    in a specific thread context.
-
 
 Support for writing unit tests
 ------------------------------
@@ -197,13 +203,15 @@ Here's a simple example using all of the above:
     ...         self.watchSignal(self.app.on_login)
     ...         self.watchSignal(self.app.on_logout)
     ...     def test_login(self):
+    ...         # Log the user in, then out
     ...         self.app.login("user")
     ...         self.app.logout("user")
-    ...         self.assertSignalFired(self.app.on_login, 'user')
-    ...         self.assertSignalFired(self.app.on_logout, 'user')
-    ...         self.assertSignalOrdering(
-    ...             (self.app.on_login, ('user',), {}),
-    ...             (self.app.on_logout, ('user',), {}))
+    ...         # Ensure that both login and logout signals were sent
+    ...         event1 = self.assertSignalFired(self.app.on_login, 'user')
+    ...         event2 = self.assertSignalFired(self.app.on_logout, 'user')
+    ...         # Ensure that signals were fired in the right order
+    ...         self.assertSignalOrdering(event1, event2)
+    ...         # Ensure that we didn't login as admin
     ...         self.assertSignalNotFired(self.app.on_login, 'admin')
 
     >>> import sys
@@ -217,6 +225,186 @@ Here's a simple example using all of the above:
     <BLANKLINE>
     OK
     <unittest.runner.TextTestResult run=1 errors=0 failures=0>
+
+Implementation notes
+--------------------
+
+At some point in time one may need to peek under the cover and understand where
+the list of signal listeners is being stored and how signals interact with
+classes. First of all, the :class:`signal` class can be used as a Python
+descriptor. Descriptors are objects that have methods such as ``__get__``,
+``__set__`` or ``__delete__``.
+
+You have most certainly used descriptors before, in fact the well-known
+``@property`` decorator is nothing more than a class with methods such as
+listed above.
+
+When used as a descriptor, a signal object will **create new signal objects
+each time it is being accessed on an instance of some class**. The instance of
+some class will be injected with a ``__signals__`` dictionary that contains
+signals that have been accessed.
+
+Consider this example::
+
+    >>> class Foo(object):
+    ...     @signal
+    ...     def ping(self):
+    ...         pass
+
+Here ``Foo.ping`` is one instance of :class:`signal`. When that instance
+is being accessed on a class it simply returns itself.
+
+    >>> Foo.ping  # doctest: +ELLIPSIS
+    <signal name:'...ping'>
+
+.. note::
+    While this looks similar to decorating a function it is functioning in a
+    totally different way. Signals decorating plain functions (outside of a
+    class definition body) are not using their descriptor nature.
+
+Now, let's instantiate ``Foo`` and see what's inside::
+
+    >>> foo = Foo()
+    >>> foo.__dict__
+    {}
+
+Nothing is inside, but there will be once we access ``foo.ping``. Morris will
+create a new :class:`signal` object associated with both the ``foo`` instance
+and the ``foo.ping`` method. It will look for ``foo.__signals__`` and not
+having found any will create one from an empty dictionary. Lastly morris will
+add the newly created signal object to the dictionary. This way each time we
+access ``foo.ping`` (on the particular ``foo`` object) we'll get exactly the
+same signal object in return.
+
+    >>> foo.ping  # doctest: +ELLIPSIS
+    <signal name:'...ping' (specific to <...Foo object at ...>)>
+    >>> foo.__dict__  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+    {'__signals__':
+     {'...ping': <signal name:'...ping'
+      (specific to <...Foo object at ...>)>}}
+
+This all happens transparently the first time that code such as
+``foo.ping.connect(...)`` is executed. When you connect a signal morris simply
+needs a place to store the list of listeners and that is in a signal object
+itself. We can now register a simple listener.
+
+    >>> def handler():
+    ...     pass
+    >>> foo.ping.connect(handler)
+
+Handlers are stored in the :meth:`signal.listeners` attribute. They are stored
+as a list of :class:`listenerinfo` tuples. Note that the first responder (the
+decorated function itself) is also present, here it is wrapped in the special
+(specific to morris) :class:`boundmethod` class.
+
+    >>> foo.ping.listeners  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+    [listenerinfo(listener=<...boundmethod object at ...>, pass_signal=False),
+     listenerinfo(listener=<function handler at ...>, pass_signal=False)]
+
+Now, let's compare this to using signals as a function decorator:
+
+    >>> @signal
+    ... def standalone():
+    ...     pass
+
+The ``standalone()`` function is now *replaced* by the correspondingly-named
+signal object:
+
+    >>> standalone
+    <signal name:'standalone'>
+
+The original function is connected as the first responder though:
+
+    >>> standalone.listeners  # doctest: +ELLIPSIS
+    [listenerinfo(listener=<function ...standalone at ...>, pass_signal=False)]
+
+Since there are no extra objects, there is no ``__dict__`` and no
+``__signals__`` either.
+
+
+Using @signal on class with __slots__
+-------------------------------------
+
+Since (having read the previous section) you already know that signal
+descriptors access the ``__signals__`` attribute on objects of classes they
+belong to, to use signals on a class that uses ``__slots__`` you need to
+reserve the ``__signals__`` slot up-front.
+
+    >>> class Slotted(object):
+    ...     __slots__ = ('__signals__')
+    ...     @signal
+    ...     def ping(self):
+    ...         pass
+    >>> Slotted.ping  # doctest: +ELLIPSIS
+    <signal name:'...ping'>
+    >>> slotted = Slotted()
+    >>> slotted.ping  # doctest: +ELLIPSIS
+    <signal name:'...ping' (specific to <...Slotted object at ...>)>
+    >>> slotted.__signals__  # doctest: +ELLIPSIS, +NORMALIZE_WHITESPACE
+    {'...ping': <signal name:'...ping'
+     (specific to <...Slotted object at ...>)>}
+
+Creating signals explicitly
+---------------------------
+
+In all of the examples above we've been using signal as a decorator for
+existing methods or functions. This is fine for the vast majority of code but
+in some cases it may be beneficial to create signal objects explicitly. This
+may be of use in meta-programming, for example.
+
+The :class:`signal` class may be instantiated in the two following ways:
+ - with the signal name (and no listeners)
+ - with the first responder function (which becomes the first listener)
+
+The second mode also has a special special case where the first responder.
+Let's examine than now. First, the plain signal object:
+
+    >>> signal(str("my-signal"))
+    <signal name:'my-signal'>
+
+This is a normal signal object, we can call it to fire the signal, we can use
+the :meth:`signal.connect()` method to add listeners, etc. If you want to
+create standalone signals, this is the best way to do it.
+
+Now let's examine the case where we pass a signal handler instead of the name:
+
+    >>> def my_signal2_handler():
+    ...     pass
+    >>> signal(my_signal2_handler)
+    <signal name:'my_signal2_handler'>
+
+Here the name of the signal is derived from the name of the handler function.
+We can customize the name, if desired, by passing the signal_name argument
+(preferably as a keyword argument to differentiate it from the ``pass_signal``
+argument):
+
+    >>> signal(my_signal2_handler, signal_name='my-signal-2')
+    <signal name:'my-signal-2'>
+
+Both examples that pass a handler are identical to what happens when decorating
+a regular function. There is nothing special about this mode either.
+
+The last, and somewhat special, mode is where the handler is an instance of
+:class:`boundmethod` (which is implemented inside morris). In the Python 2.x
+world, python had bound methods but they were removed. We still benefit from
+them, a little, hence they are back.
+
+    >>> class C(object):
+    ...     def handler(self):
+    ...         pass
+    >>> signal(boundmethod(C(), C.handler))  # doctest: +ELLIPSIS
+    <signal name:'...handler' (specific to <...C object at ...>)>
+
+.. note::
+    It is possible to remove boundmethod and rely  ``func.__self__`` but this
+    was not done, yet. Contributions are welcome!
+
+To summarize this section, some simple rules:
+
+- each signal object has a list of listeners
+- signal objects act as descriptors and create per-instance signal objects
+- signal object created this way are stored in per-instance ``__signals__``
+  attribute
 """
 from __future__ import print_function, absolute_import, unicode_literals
 
@@ -227,7 +415,7 @@ import unittest
 
 __author__ = 'Zygmunt Krynicki'
 __email__ = 'zygmunt.krynicki@canonical.com'
-__version__ = '1.1'
+__version__ = '1.2'
 __all__ = ['signal', 'SignalTestCase']
 
 _logger = logging.getLogger("morris")
@@ -255,7 +443,8 @@ class signal(object):
     except NameError:
         _str_bases = (str,)
 
-    def __init__(self, name_or_first_responder, pass_signal=False):
+    def __init__(self, name_or_first_responder, pass_signal=False,
+                 signal_name=None):
         """
         Construct a signal with the given name
 
@@ -268,13 +457,18 @@ class signal(object):
             itself to the first responder (as the ``signal`` argument). This is
             only used in the case where ``name_or_first_responder`` is a
             callable.
+        :param signal_name:
+            Optional name of the signal. This is meaningful only when the first
+            argument ``name_or_first_responder`` is a callable.  When that
+            happens this argument is used and no guessing based on __qualname__
+            or __name__ is being used.
         """
         if isinstance(name_or_first_responder, self._str_bases):
             first_responder = None
             name = name_or_first_responder
         else:
             first_responder = name_or_first_responder
-            name = _get_fn_name(first_responder)
+            name = signal_name or _get_fn_name(first_responder)
         self._name = name
         self._first_responder = first_responder
         self._listeners = []
@@ -289,12 +483,12 @@ class signal(object):
             - a signal object created via a signal descriptor on an object
             - a signal object acting as a descriptor or function decorator
         """
-        if (len(self._listeners[0]) > 0
+        if (len(self._listeners) > 0
                 and isinstance(self.listeners[0].listener, boundmethod)):
             return "<signal name:{!r} (specific to {!r})>".format(
-                self._name, self._listeners[0].listener.instance)
+                str(self._name), self._listeners[0].listener.instance)
         else:
-            return "<signal name:{!r}>".format(self._name)
+            return "<signal name:{!r}>".format(str(self._name))
 
     def __get__(self, instance, owner):
         """
@@ -375,6 +569,9 @@ class signal(object):
             'on_func'
         """
         return self._name
+
+    # For backwards compatibility with Plainbox-based code
+    signal_name = name
 
     @property
     def listeners(self):
@@ -553,16 +750,20 @@ class boundmethod(object):
     def __init__(self, instance, func):
         self.instance = instance
         self.func = func
+        if hasattr(func, '__qualname__'):
+            self.__qualname__ = self.func.__qualname__
+        self.__name__ = self.func.__name__
 
     def __call__(self, *args, **kwargs):
         return self.func(self.instance, *args, **kwargs)
 
 
-class SignalTestCase(unittest.TestCase):
+class SignalInterceptorMixIn:
     """
-    A :class:`unittest.TestCase` subclass that simplifies testing uses of
-    the Morris signals. It provides three assertion methods and one utility
-    helper method for observing signal events.
+    A mix-in class for TestCase-like classes that adds extra methods for
+    working with and testing signals. This class may be of use if the base
+    TestCase class is not the standard ``unittest.TestCase`` class but the user
+    still wants to take advantage of the extra methods provided here.
     """
 
     def _extend_state(self):
@@ -651,6 +852,14 @@ class SignalTestCase(unittest.TestCase):
                     "\t{}: {}".format(i, event)
                     for i, event in enumerate(
                         (self._events_seen[idx] for idx in actual_order), 1))))
+
+
+class SignalTestCase(unittest.TestCase, SignalInterceptorMixIn):
+    """
+    A :class:`unittest.TestCase` subclass that simplifies testing uses of
+    the Morris signals. It provides three assertion methods and one utility
+    helper method for observing signal events.
+    """
 
 
 def remove_signals_listeners(instance):

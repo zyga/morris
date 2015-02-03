@@ -1,4 +1,4 @@
-# Copyright 2012-2014 Canonical Ltd.
+# Copyright 2012-2015 Canonical Ltd.
 # Written by:
 #   Zygmunt Krynicki <zygmunt.krynicki@canonical.com>
 #
@@ -15,7 +15,6 @@
 #
 # You should have received a copy of the GNU Lesser General Public License
 # along with Morris.  If not, see <http://www.gnu.org/licenses/>.
-
 """
 morris.tests
 ============
