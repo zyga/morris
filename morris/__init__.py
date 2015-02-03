@@ -382,6 +382,9 @@ class signal(object):
         """
         return self._name
 
+    # For backwards compatibility with Plainbox-based code
+    signal_name = name
+
     @property
     def listeners(self):
         """
