@@ -570,11 +570,12 @@ class boundmethod(object):
         return self.func(self.instance, *args, **kwargs)
 
 
-class SignalTestCase(unittest.TestCase):
+class SignalInterceptorMixIn:
     """
-    A :class:`unittest.TestCase` subclass that simplifies testing uses of
-    the Morris signals. It provides three assertion methods and one utility
-    helper method for observing signal events.
+    A mix-in class for TestCase-like classes that adds extra methods for
+    working with and testing signals. This class may be of use if the base
+    TestCase class is not the standard ``unittest.TestCase`` class but the user
+    still wants to take advantage of the extra methods provided here.
     """
 
     def _extend_state(self):
@@ -663,6 +664,14 @@ class SignalTestCase(unittest.TestCase):
                     "\t{}: {}".format(i, event)
                     for i, event in enumerate(
                         (self._events_seen[idx] for idx in actual_order), 1))))
+
+
+class SignalTestCase(unittest.TestCase, SignalInterceptorMixIn):
+    """
+    A :class:`unittest.TestCase` subclass that simplifies testing uses of
+    the Morris signals. It provides three assertion methods and one utility
+    helper method for observing signal events.
+    """
 
 
 def remove_signals_listeners(instance):
