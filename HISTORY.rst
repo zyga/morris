@@ -4,6 +4,13 @@
 History
 =======
 
+1.2 (2015-02-030
+----------------
+* Merge backwards compatibility features for Plainbox migration.
+  (signal_name, SignalInterceptorMixIn)
+* Fix a bug in signal.__repr__()
+* Document internals better
+
 1.1 (2015-02-02)
 ----------------
 

@@ -415,7 +415,7 @@ import unittest
 
 __author__ = 'Zygmunt Krynicki'
 __email__ = 'zygmunt.krynicki@canonical.com'
-__version__ = '1.1'
+__version__ = '1.2'
 __all__ = ['signal', 'SignalTestCase']
 
 _logger = logging.getLogger("morris")
