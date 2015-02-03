@@ -255,7 +255,8 @@ class signal(object):
     except NameError:
         _str_bases = (str,)
 
-    def __init__(self, name_or_first_responder, pass_signal=False):
+    def __init__(self, name_or_first_responder, pass_signal=False,
+                 signal_name=None):
         """
         Construct a signal with the given name
 
@@ -268,13 +269,18 @@ class signal(object):
             itself to the first responder (as the ``signal`` argument). This is
             only used in the case where ``name_or_first_responder`` is a
             callable.
+        :param signal_name:
+            Optional name of the signal. This is meaningful only when the first
+            argument ``name_or_first_responder`` is a callable.  When that
+            happens this argument is used and no guessing based on __qualname__
+            or __name__ is being used.
         """
         if isinstance(name_or_first_responder, self._str_bases):
             first_responder = None
             name = name_or_first_responder
         else:
             first_responder = name_or_first_responder
-            name = _get_fn_name(first_responder)
+            name = signal_name or _get_fn_name(first_responder)
         self._name = name
         self._first_responder = first_responder
         self._listeners = []
