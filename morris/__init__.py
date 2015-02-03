@@ -562,6 +562,9 @@ class boundmethod(object):
     def __init__(self, instance, func):
         self.instance = instance
         self.func = func
+        if hasattr(func, '__qualname__'):
+            self.__qualname__ = self.func.__qualname__
+        self.__name__ = self.func.__name__
 
     def __call__(self, *args, **kwargs):
         return self.func(self.instance, *args, **kwargs)
