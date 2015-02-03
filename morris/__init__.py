@@ -289,7 +289,7 @@ class signal(object):
             - a signal object created via a signal descriptor on an object
             - a signal object acting as a descriptor or function decorator
         """
-        if (len(self._listeners[0]) > 0
+        if (len(self._listeners) > 0
                 and isinstance(self.listeners[0].listener, boundmethod)):
             return "<signal name:{!r} (specific to {!r})>".format(
                 self._name, self._listeners[0].listener.instance)
