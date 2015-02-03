@@ -298,9 +298,9 @@ class signal(object):
         if (len(self._listeners) > 0
                 and isinstance(self.listeners[0].listener, boundmethod)):
             return "<signal name:{!r} (specific to {!r})>".format(
-                self._name, self._listeners[0].listener.instance)
+                str(self._name), self._listeners[0].listener.instance)
         else:
-            return "<signal name:{!r}>".format(self._name)
+            return "<signal name:{!r}>".format(str(self._name))
 
     def __get__(self, instance, owner):
         """
