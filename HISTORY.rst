@@ -4,7 +4,7 @@
 History
 =======
 
-1.2 (2015-02-030
+1.2 (2015-02-03)
 ----------------
 * Merge backwards compatibility features for Plainbox migration.
   (signal_name, SignalInterceptorMixIn)
